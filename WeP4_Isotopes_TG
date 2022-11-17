@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Tue Nov  5 14:24:58 2019
+
+@author: shane
+"""
+#import modules
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+import rampedpyrox as rp
+import os
+import fnmatch
+import pandas as pd
+
+rootdir = '/Users/shane/14Constraint Dropbox/Shane Stoner/IMPRS/ThermalAnalysis/WeP4_Pyrox_New/SubsoilNew/'
+i = 0
+
+#for root, dirs, files in os.walk(rootdir):
+#    print(root.split("/")[-1])
+###### Inputs
+#    #os.chdir('/Users/shane/14Constraint Dropbox/Shane Stoner/IMPRS/ThermalAnalysis/WeP4SandThermograms/0-10 Bulk')
+#    os.chdir(root)
+true_13C = [-28.67, 0.02]
+#    i = i+1
+go = True
+        
+TrueCs = pd.read_csv('/Users/shane/14Constraint Dropbox/Shane Stoner/IMPRS/ThermalAnalysis/Frac13Cs.csv')
+TrueCs.loc[:, "Sample"]
+i = "30-50 ExtrRes"
+
+FolderList = os.listdir(rootdir)
+FolderList.remove('.DS_Store')
+
+for i in FolderList:
+    print(i)
+    file = str(rootdir + i)
+    
+    Row13 = next(iter(TrueCs[TrueCs['Sample']==i].index), 'no match')
+    true_13C = [TrueCs.iloc[Row13]['d13C'], TrueCs.iloc[Row13]['d13C_err']]
+    print(true_13C)
+    
+    os.chdir(file)
+    for file in os.listdir():
+        #print(file)
+        if fnmatch.fnmatch(file, '*RPO.csv'):
+            tg_data = os.path.abspath(file)
+            sample_name = str(file.split('_')[3]) + '_' + str(file.split('_')[2])
+        if fnmatch.fnmatch(file, '*Iso.csv'):
+            iso_data = os.path.abspath(file)
+            #print(file)
+    
+    print(sample_name)
+    
+    #number of timepoints to be used in down-sampled thermogram
+    nt = 300
+    
+    tg = rp.RpoThermogram.from_csv(
+            tg_data,
+            bl_subtract = True, #subtract baseline
+            nt = nt)
+    
+    #load modules
+    import matplotlib.pyplot as plt
+    
+    #make a figure
+    fig, ax = plt.subplots(2, 2,
+            figsize = (8,8),
+            sharex = 'col')
+    
+    #plot results
+    ax[0, 0] = tg.plot(
+            ax = ax[0, 0],
+            xaxis = 'time',
+            yaxis = 'rate')
+    
+    ax[0, 1] = tg.plot(
+            ax = ax[0, 1],
+            xaxis = 'temp',
+            yaxis = 'rate')
+    
+    ax[1, 0] = tg.plot(
+            ax = ax[1, 0],
+            xaxis = 'time',
+            yaxis = 'fraction')
+    
+    ax[1, 1] = tg.plot(
+            ax = ax[1, 1],
+            xaxis = 'temp',
+            yaxis = 'fraction')
+    
+    #adjust the axes
+    ax[0, 1].set_ylim([0, 0.0035])
+    ax[1, 1].set_xlim([375, 1200])
+    
+    plt.tight_layout()
+    
+    #print in the terminal
+    print(tg.tg_info)
+    
+    #save to csv
+    tg.tg_info.to_csv(sample_name + '_tg_info.csv')
+    
+    
+    #define log10omega, assume constant value of 10
+    #value advocated in Hemingway et al. (2017) Biogeosciences
+    log10omega = 10
+    
+    #define E range (in kJ/mol)
+    E_min = 50
+    E_max = 400
+    nE = 400 #number of points in the vector
+    
+    #create the DAEM instance
+    daem = rp.Daem.from_timedata(
+            tg,
+            log10omega = log10omega,
+            E_max = E_max,
+            E_min = E_min,
+            nE = nE)
+    
+    #make a figure
+    fig,ax = plt.subplots(1, 1,
+            figsize = (5, 5))
+    
+    lam_best, ax = daem.calc_L_curve(
+            tg,
+            ax = ax,
+            plot = True)
+    
+    plt.tight_layout()
+    
+    #Create energy complex
+    ec = rp.EnergyComplex.inverse_model(
+            daem,
+            tg,
+            lam = 'auto')
+    
+    #make a figure
+    fig,ax = plt.subplots(1, 1,
+            figsize = (5,5))
+    
+    #plot results
+    ax = ec.plot(ax = ax)
+    plt.tight_layout()
+    
+    #print in the terminal
+    print(ec.ec_info)
+    
+    #save to csv
+    ec.ec_info.to_csv(sample_name + '_ec_info.csv')
+    
+    
+    #residual rmse for the model fit
+    ec.resid
+    
+    #regularization roughness norm
+    ec.rgh
+    
+    
+    
+    
+    
+    #### Forward modeling the estimated thermogram
+    tg.forward_model(daem, ec)
+    
+    #make a figure
+    fig, ax = plt.subplots(2, 2,
+            figsize = (8,8),
+            sharex = 'col')
+    
+    #plot results
+    ax[0, 0] = tg.plot(
+            ax = ax[0, 0],
+            xaxis = 'time',
+            yaxis = 'rate')
+    
+    ax[0, 1] = tg.plot(
+            ax = ax[0, 1],
+            xaxis = 'temp',
+            yaxis = 'rate')
+    
+    ax[1, 0] = tg.plot(
+            ax = ax[1, 0],
+            xaxis = 'time',
+            yaxis = 'fraction')
+    
+    ax[1, 1] = tg.plot(
+            ax = ax[1, 1],
+            xaxis = 'temp',
+            yaxis = 'fraction')
+    
+    #adjust the axes
+    ax[1, 1].set_xlim([375, 1200])
+    
+    plt.tight_layout()
+    
+    
+    ###### Importing isotopes
+    
+    ri = rp.RpoIsotopes.from_csv(
+            iso_data,
+            daem,
+            ec,
+            blk_corr = False,
+            bulk_d13C_true = true_13C, #measured true mean, std.
+            mass_err = 0.01, #1 percent uncertainty in mass
+            DE = 0.00180) #1.8 J/mol for KIE
+    
+    
+    #print to terminal
+    print(ri.ri_raw_info)
+    print(ri.ri_corr_info)
+    
+    
+    #save to .csv file
+    ri.ri_raw_info.to_csv(sample_name + '_raw_iso_info.csv')
+    ri.ri_corr_info.to_csv(sample_name + '_isotope_info.csv')
+    
+    
+#    
+#    #make a figure
+#    fig, ax = plt.subplots(2, 2,
+#            figsize = (8,8),
+#            sharex = True)
+#    
+#    #plot results
+#    ax[0, 0] = ri.plot(
+#            ax = ax[0, 0],
+#            plt_var = 'p0E')
+#    
+#    ax[0, 1] = ri.plot(
+#            ax = ax[0, 1],
+#            plt_var = 'd13C',
+#            plt_corr = True)
+#    
+#    ax[1, 0] = ri.plot(
+#            ax = ax[1, 0],
+#            plt_var = 'Fm',
+#            plt_corr = False)
+#    
+#    ax[1, 1] = ri.plot(
+#            ax = ax[1, 1],
+#            plt_var = 'd13C',
+#            plt_corr = False) #plotting raw values
+#    
+#    #adjust the axes
+#    ax[0,0].set_xlim([100,300])
+#    ax[0,1].set_ylim([-30,-21])
+#    ax[1,1].set_ylim([-30,-21])
+#    
+#    plt.tight_layout()
+    
+#    #make a figure
+#    fig,ax = plt.subplots(1, 1,
+#            figsize = (7,7))
+#    
+#    ax.set_xlim([0,1500])
+#    
+#    #plot results
+#    ax = rp.plot_tg_isotopes(tg, ri, ax = ax, plt_corr = True)
+#    
+#    plt.tight_layout()
+    
+    
+    for i in np.linspace(0,len(ri._p_frac)-1,len(ri._p_frac)):
+        np.savetxt(str(sample_name + '_p_frac' + str(int(i+1)) + '.csv'), ri._p_frac[int(i)])
+    np.savetxt(str(sample_name + '_p_frac.csv'), ri._p_frac[1])
+    np.savetxt(str(sample_name + '_p_tot.csv'), ri._p)
+    np.savetxt(str(sample_name + '_E.csv'), ri._E)
+
+
+
+
